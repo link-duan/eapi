@@ -24,6 +24,8 @@ type SchemaBuilder struct {
 	ctx         *Context
 	contentType string
 	stack       Stack[string]
+	params      []*spec.SchemaRef
+	typeParams  []*spec.TypeParam
 }
 
 func NewSchemaBuilder(ctx *Context, contentType string) *SchemaBuilder {
@@ -34,8 +36,8 @@ func newSchemaBuilderWithStack(ctx *Context, contentType string, stack Stack[str
 	return &SchemaBuilder{ctx: ctx, contentType: contentType, stack: stack}
 }
 
-func (s *SchemaBuilder) FromTypeDef(def *TypeDefinition) *spec.SchemaRef {
-	schemaRef := s.FromTypeSpec(def.Spec)
+func (s *SchemaBuilder) parseTypeDef(def *TypeDefinition) *spec.SchemaRef {
+	schemaRef := s.parseTypeSpec(def.Spec)
 	if schemaRef == nil {
 		return nil
 	}
@@ -52,16 +54,59 @@ func (s *SchemaBuilder) FromTypeDef(def *TypeDefinition) *spec.SchemaRef {
 	return schemaRef
 }
 
-func (s *SchemaBuilder) FromTypeSpec(t *ast.TypeSpec) *spec.SchemaRef {
-	schema := s.ParseExpr(t.Type)
+func (s *SchemaBuilder) parseTypeSpec(t *ast.TypeSpec) *spec.SchemaRef {
+	var typeParams []*spec.TypeParam
+	if t.TypeParams != nil {
+		for i, field := range t.TypeParams.List {
+			for j, name := range field.Names {
+				typeParams = append(typeParams, &spec.TypeParam{
+					Index:      i + j,
+					Name:       name.Name,
+					Constraint: field.Type.(*ast.Ident).Name,
+				})
+			}
+		}
+	}
+
+	schema := s.withTypeParams(typeParams).ParseExpr(t.Type)
 	if schema == nil {
 		return nil
 	}
+	if t.TypeParams != nil {
+		schema.Value.WithExtendedType(spec.NewGenericExtendedType(typeParams))
+	}
+
 	comment := ParseComment(s.ctx.GetHeadingCommentOf(t.Pos()))
 	schema.Value.Title = strcase.ToCamel(s.ctx.Package().Name + t.Name.Name)
 	schema.Value.Description = strings.TrimSpace(comment.TrimPrefix(t.Name.Name))
 	schema.Value.Deprecated = comment.Deprecated()
 	return schema
+}
+
+func (s *SchemaBuilder) withTypeParams(params []*spec.TypeParam) *SchemaBuilder {
+	s.typeParams = params
+	return s
+}
+
+func (s *SchemaBuilder) withParams(params ...*spec.SchemaRef) *SchemaBuilder {
+	res := *s
+	for i, param := range params {
+		param = param.Unref(s.ctx.Doc())
+		ext := param.Value.ExtendedTypeInfo
+		if ext == nil {
+			continue
+		}
+		switch ext.Type {
+		case spec.ExtendedTypeSpecific:
+			// TODO
+			panic("implement me")
+
+		case spec.ExtendedTypeParam:
+			params[i] = s.params[ext.TypeParam.Index]
+		}
+	}
+	res.params = params
+	return &res
 }
 
 func (s *SchemaBuilder) ParseExpr(expr ast.Expr) (schema *spec.SchemaRef) {
@@ -107,6 +152,12 @@ func (s *SchemaBuilder) ParseExpr(expr ast.Expr) (schema *spec.SchemaRef) {
 
 	case *ast.CallExpr:
 		return s.parseCallExpr(expr)
+
+	case *ast.IndexExpr:
+		return s.parseIndexExpr(expr)
+
+	case *ast.IndexListExpr:
+		return s.parseIndexListExpr(expr)
 	}
 
 	// TODO
@@ -178,6 +229,8 @@ func (s *SchemaBuilder) parseIdent(expr *ast.Ident) *spec.SchemaRef {
 			WithType("object").
 			WithDescription("Any Type").
 			WithExtendedType(spec.NewAnyExtendedType()))
+	case *types.TypeParam:
+		return spec.NewTypeParamSchema(s.typeParams[t.Index()]).NewRef()
 	}
 
 	// 检查是否是常用类型
@@ -289,7 +342,7 @@ func (s *SchemaBuilder) parseType(t types.Type) *spec.SchemaRef {
 	defer s.stack.Pop()
 
 	payloadSchema := newSchemaBuilderWithStack(s.ctx.WithPackage(typeDef.pkg).WithFile(typeDef.file), s.contentType, append(s.stack, typeDef.Key())).
-		FromTypeDef(typeDef)
+		parseTypeDef(typeDef)
 	if payloadSchema == nil {
 		return nil
 	}
@@ -337,9 +390,93 @@ func (s *SchemaBuilder) parseCallExpr(expr *ast.CallExpr) *spec.SchemaRef {
 
 	case *TypeDefinition:
 		return newSchemaBuilderWithStack(s.ctx.WithPackage(def.pkg).WithFile(def.file), s.contentType, append(s.stack, def.Key())).
-			FromTypeSpec(def.Spec)
+			parseTypeSpec(def.Spec)
 
 	default:
 		return nil
 	}
+}
+
+func (s *SchemaBuilder) parseIndexExpr(expr *ast.IndexExpr) *spec.SchemaRef {
+	paramType := s.ParseExpr(expr.Index)
+	genericType := s.ParseExpr(expr.X)
+	if genericType == nil {
+		return nil
+	}
+
+	def := s.ctx.ParseType(s.ctx.Package().TypesInfo.TypeOf(expr.X)).(*TypeDefinition)
+	typeKey := def.ModelKey() + "[" + s.getTypeKey(expr.Index) + "]"
+
+	_, exists := s.ctx.Doc().Components.Schemas[typeKey]
+	if !exists {
+		// specialization
+		// 这里要考虑类型参数引用了自身的情况，比如 GType[GType[int]]
+		schemaRef := s.withParams(paramType).specializeGenericType(genericType)
+		// TODO 暂时不处理泛型类型元信息
+		//schemaRef.Value.WithExtendedType(spec.NewSpecificExtendType(genericType, paramType))
+		s.ctx.Doc().Components.Schemas[typeKey] = schemaRef
+	}
+
+	return spec.NewSchemaRef("#/components/schemas/"+typeKey, nil)
+}
+
+func (s *SchemaBuilder) parseIndexListExpr(expr *ast.IndexListExpr) *spec.SchemaRef {
+	// TODO
+
+	//var params []*spec.SchemaRef
+	//for _, param := range expr.Indices {
+	//	params = append(params, s.ParseExpr(param))
+	//}
+	//genericType := s.ParseExpr(expr.X)
+	//return spec.NewSchemaRef("", spec.NewObjectSchema().WithExtendedType(
+	//	spec.NewSpecificExtendType(genericType, params...),
+	//))
+
+	return spec.NewSchema().WithDescription("TODO").NewRef()
+}
+
+func (s *SchemaBuilder) getTypeKey(expr ast.Expr) string {
+	t := s.ctx.Package().TypesInfo.TypeOf(expr)
+	switch t := t.(type) {
+	case *types.Basic:
+		return t.Name()
+	default:
+		def := s.ctx.ParseType(t)
+		if def == nil {
+			fmt.Printf("unknown type at %s\n", s.ctx.LineColumn(expr.Pos()))
+			return ""
+		}
+		return def.(*TypeDefinition).ModelKey()
+	}
+}
+
+func (s *SchemaBuilder) specializeGenericType(genericType *spec.SchemaRef) *spec.SchemaRef {
+	schemaRef := genericType.Unref(s.ctx.Doc())
+	schema := schemaRef.Value.Clone()
+	ext := schema.ExtendedTypeInfo
+	if ext == nil || ext.Type != spec.ExtendedTypeGeneric {
+		return genericType
+	}
+
+	for key, property := range schema.Properties {
+		property = property.Unref(s.ctx.Doc()).Clone()
+		ext := property.Value.ExtendedTypeInfo
+		if ext == nil {
+			continue
+		}
+		switch ext.Type {
+		case spec.ExtendedTypeParam:
+			schema.Properties[key] = s.params[ext.TypeParam.Index]
+
+		case spec.ExtendedTypeSpecific:
+			schema.Properties[key] = s.withParams(ext.SpecificType.Params...).specializeGenericType(ext.SpecificType.Type)
+
+		default:
+			continue
+		}
+	}
+
+	schema.ExtendedTypeInfo = nil
+	schemaRef.Value = schema
+	return schemaRef
 }

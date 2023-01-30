@@ -167,7 +167,7 @@ func (e *Plugin) parseAPI(ctx *eapi.Context, callExpr *ast.CallExpr) (api *eapi.
 		api.Spec.OperationID = handlerFnDef.Pkg().Name + "." + handlerFnDef.Decl.Name.Name
 	}
 	if len(api.Spec.Tags) == 0 {
-		api.Spec.Tags = ctx.Env.LookupTags()
+		api.Spec.Tags = ctx.CommentStack().LookupTags()
 	}
 	newHandlerAnalyzer(
 		ctx.NewEnv().WithPackage(handlerFnDef.Pkg()).WithFile(handlerFnDef.File()),

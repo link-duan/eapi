@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/getkin/kin-openapi/jsoninfo"
 )
@@ -121,4 +122,17 @@ func (doc *T) Validate(ctx context.Context, opts ...ValidationOption) error {
 	}
 
 	return nil
+}
+
+func (doc *T) GetSchemaByRef(ref string) *SchemaRef {
+	if !strings.HasPrefix(ref, "#/components/schemas/") {
+		return nil
+	}
+
+	paths := strings.Split(ref, "/")
+	if len(paths) != 4 {
+		return nil
+	}
+
+	return doc.Components.Schemas[paths[3]]
 }

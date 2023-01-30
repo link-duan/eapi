@@ -2,6 +2,7 @@ package goods
 
 import (
 	"net/http"
+
 	"sample/model"
 
 	"github.com/labstack/echo/v4"
@@ -56,6 +57,9 @@ func Delete(c echo.Context) error {
 	goodsId := c.Param("id")
 	_ = goodsId
 
-	c.NoContent(http.StatusNoContent)
+	c.JSON(http.StatusOK, model.GenericTypeResponse[string]{
+		Data:     "deleted",
+		Metadata: map[string]any{},
+	})
 	return nil
 }

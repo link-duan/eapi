@@ -3,27 +3,32 @@ package spec
 type ExtendedType string
 
 const (
-	ExtendedTypeMap  ExtendedType = "map"
-	ExtendedTypeAny  ExtendedType = "any"
-	ExtendedTypeEnum ExtendedType = "enum"
+	ExtendedTypeMap      ExtendedType = "map"
+	ExtendedTypeAny      ExtendedType = "any"
+	ExtendedTypeEnum     ExtendedType = "enum"
+	ExtendedTypeSpecific ExtendedType = "specific"
+	ExtendedTypeGeneric  ExtendedType = "generic"
+	ExtendedTypeParam    ExtendedType = "param"
 )
 
 type ExtendedTypeInfo struct {
-	Type ExtendedType `json:"type"`
+	Type ExtendedType
 
-	// When Type = 'map'. Key means type of key of map.
-	Key *SchemaRef
-	// When Type = 'map'. Value means type of value of map.
-	Value *SchemaRef `json:"valueType"`
+	MapKey   *SchemaRef
+	MapValue *SchemaRef
 
-	// Enum Items
-	EnumItems []*ExtendedEnumItem `json:"enumItems"`
+	EnumItems []*ExtendedEnumItem
+
+	SpecificType *SpecificType
+	GenericType  *GenericType
+
+	TypeParam *TypeParam
 }
 
 func NewExtendedEnumType(items ...*ExtendedEnumItem) *ExtendedTypeInfo {
 	return &ExtendedTypeInfo{
 		Type:      ExtendedTypeEnum,
-		Value:     nil,
+		MapValue:  nil,
 		EnumItems: items,
 	}
 }
@@ -34,9 +39,9 @@ func NewAnyExtendedType() *ExtendedTypeInfo {
 
 func NewMapExtendedType(key, value *SchemaRef) *ExtendedTypeInfo {
 	return &ExtendedTypeInfo{
-		Type:  ExtendedTypeMap,
-		Key:   key,
-		Value: value,
+		Type:     ExtendedTypeMap,
+		MapKey:   key,
+		MapValue: value,
 	}
 }
 
@@ -52,4 +57,34 @@ func NewExtendEnumItem(key string, value interface{}, description string) *Exten
 		Value:       value,
 		Description: description,
 	}
+}
+
+type SpecificType struct {
+	Params []*SchemaRef
+	Type   *SchemaRef
+}
+
+func NewSpecificExtendType(genericType *SchemaRef, params ...*SchemaRef) *ExtendedTypeInfo {
+	return &ExtendedTypeInfo{
+		Type:         ExtendedTypeSpecific,
+		SpecificType: &SpecificType{Params: params, Type: genericType},
+	}
+}
+
+type GenericType struct {
+	TypeParams []*TypeParam
+}
+
+func NewGenericExtendedType(typeParams []*TypeParam) *ExtendedTypeInfo {
+	return &ExtendedTypeInfo{Type: ExtendedTypeGeneric, GenericType: &GenericType{TypeParams: typeParams}}
+}
+
+type TypeParam struct {
+	Index      int
+	Name       string
+	Constraint string
+}
+
+func NewTypeParamExtendedType(param *TypeParam) *ExtendedTypeInfo {
+	return &ExtendedTypeInfo{Type: ExtendedTypeParam, TypeParam: param}
 }

@@ -372,6 +372,22 @@ func (value SchemaRef) JSONLookup(token string) (interface{}, error) {
 	return ptr, err
 }
 
+func (value *SchemaRef) Unref(doc *T) *SchemaRef {
+	if value.Ref != "" {
+		return doc.GetSchemaByRef(value.Ref)
+	}
+	return value
+}
+
+func (value *SchemaRef) Clone() *SchemaRef {
+	res := *value
+	if res.Value != nil {
+		res.Value = res.Value.Clone()
+
+	}
+	return &res
+}
+
 // SecuritySchemeRef represents either a SecurityScheme or a $ref to a SecurityScheme.
 // When serializing and both fields are set, Ref is preferred over Value.
 type SecuritySchemeRef struct {

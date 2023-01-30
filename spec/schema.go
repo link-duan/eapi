@@ -310,6 +310,13 @@ func (schema *Schema) NewRef() *SchemaRef {
 	}
 }
 
+func NewTypeParamSchema(param *TypeParam) *Schema {
+	return &Schema{
+		Type:             "typeParam",
+		ExtendedTypeInfo: NewTypeParamExtendedType(param),
+	}
+}
+
 func NewOneOfSchema(schemas ...*Schema) *Schema {
 	refs := make([]*SchemaRef, 0, len(schemas))
 	for _, schema := range schemas {
@@ -1694,8 +1701,7 @@ func (schema *Schema) WithDescription(s string) *Schema {
 }
 
 func (schema *Schema) Clone() *Schema {
-	res := *schema
-	return &res
+	return deepcopy.Copy(schema).(*Schema)
 }
 
 type SchemaError struct {

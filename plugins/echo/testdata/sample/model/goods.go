@@ -57,3 +57,20 @@ type UpdateGoodsRequest struct {
 	// Detail images
 	Images *[]*Image `json:"images"`
 }
+
+// GenericTypeResponse used for testing generic type
+type GenericTypeResponse[T any] struct {
+	Data     T              `json:"data"`
+	Metadata map[string]any `json:"metadata"`
+	//Value    SampleGenericType[T] `json:"value"`
+}
+
+type SampleGenericType[T any] struct {
+	Value T `json:"value"`
+}
+
+type List[T any] []T
+
+type Error struct {
+	Message string `json:"message"`
+}

@@ -3,8 +3,7 @@ import {
   ViewGoodsCreateReq,
   GinParams,
   ViewSelfRefType,
-  ViewProperty,
-  ViewGoodsInfoRes
+  ViewProperty
  } from "./types";
 
 /*
@@ -49,7 +48,7 @@ export function shopGoodsInfo(guid: string) {
 }
 
 export function shopWrappedHandler(query: { hello?: string; world?: string }) {
-  return request<{ code: number; data: ViewGoodsInfoRes; msg: string; }>(`/wrapped-handler`, {
+  return request<{ code: number; data: Record<string, any>; msg: string; }>(`/wrapped-handler`, {
     method: "get",
     params: query,
   });

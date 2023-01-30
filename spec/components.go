@@ -31,7 +31,17 @@ func NewComponents() Components {
 
 // MarshalJSON returns the JSON encoding of Components.
 func (components *Components) MarshalJSON() ([]byte, error) {
-	return jsoninfo.MarshalStrictStruct(components)
+	c := *components
+	schemas := make(Schemas)
+	for key, schema := range components.Schemas {
+		ext := schema.Value.ExtendedTypeInfo
+		if ext != nil && ext.Type == ExtendedTypeGeneric {
+			continue
+		}
+		schemas[key] = schema
+	}
+	c.Schemas = schemas
+	return jsoninfo.MarshalStrictStruct(&c)
 }
 
 // UnmarshalJSON sets Components to a copy of data.

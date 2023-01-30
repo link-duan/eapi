@@ -216,9 +216,10 @@ func (p *Printer) multilineComment(options *multilineCommentOptions) f.Doc {
 		f.If(len(options.tags) > 0, f.Group(lo.Map(options.tags, func(t *multilineCommentTag, _ int) f.Doc {
 			return f.Group(
 				f.Content(" * "+t.tag+" "),
-				f.Join(f.Group(f.LineBreak(), f.Content(" *\t")), lo.Map(t.text, func(line string, _ int) f.Doc {
-					return f.Content(strings.TrimSpace(line))
-				})...),
+				f.Join(
+					f.Group(f.LineBreak(), f.Content(" *\t")),
+					lo.Map(t.text, func(line string, _ int) f.Doc { return f.Content(strings.TrimSpace(line)) })...,
+				),
 			)
 		})...)), f.LineBreak(),
 		f.Content(" */"), f.LineBreak(),
@@ -244,7 +245,7 @@ func (p *Printer) printExtendedType(info *spec.ExtendedTypeInfo) f.Doc {
 	case spec.ExtendedTypeAny:
 		return f.Content("any")
 	case spec.ExtendedTypeMap:
-		return f.Content("Record<", p.PrintType(info.Key), ", ", p.PrintType(info.Value), ">")
+		return f.Content("Record<", p.PrintType(info.MapKey), ", ", p.PrintType(info.MapValue), ">")
 	}
 	return f.Content("unknown")
 }
