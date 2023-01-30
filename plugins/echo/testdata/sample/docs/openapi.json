@@ -27,23 +27,6 @@
                 "title": "ModelCreateGoodsRequest",
                 "type": "object"
             },
-            "sample_model.GenericTypeResponse": {
-                "description": "used for testing generic type",
-                "properties": {
-                    "data": {
-                        "type": "string"
-                    },
-                    "metadata": {
-                        "additionalProperties": {
-                            "description": "Any Type",
-                            "type": "object"
-                        },
-                        "type": "object"
-                    }
-                },
-                "title": "ModelGenericTypeResponse",
-                "type": "object"
-            },
             "sample_model.GenericTypeResponse[string]": {
                 "description": "used for testing generic type",
                 "properties": {
@@ -56,6 +39,9 @@
                             "type": "object"
                         },
                         "type": "object"
+                    },
+                    "value": {
+                        "$ref": "#/components/schemas/sample_model.SampleGenericType[string]"
                     }
                 },
                 "title": "ModelGenericTypeResponse",
@@ -127,6 +113,18 @@
                     }
                 },
                 "title": "ModelListGoodsResponse",
+                "type": "object"
+            },
+            "sample_model.SampleGenericType[string]": {
+                "properties": {
+                    "selfRef": {
+                        "$ref": "#/components/schemas/sample_model.GenericTypeResponse[string]"
+                    },
+                    "value": {
+                        "type": "string"
+                    }
+                },
+                "title": "ModelSampleGenericType",
                 "type": "object"
             },
             "sample_model.UpdateGoodsRequest": {

@@ -3,6 +3,7 @@ package spec
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/go-openapi/jsonpointer"
 
@@ -383,9 +384,18 @@ func (value *SchemaRef) Clone() *SchemaRef {
 	res := *value
 	if res.Value != nil {
 		res.Value = res.Value.Clone()
-
 	}
 	return &res
+}
+
+func (value *SchemaRef) Key() string {
+	if value.Ref != "" {
+		return strings.TrimPrefix(value.Ref, "#/components/schema")
+	}
+	if value.Value.Key != "" {
+		return value.Value.Key
+	}
+	return value.Value.Type
 }
 
 // SecuritySchemeRef represents either a SecurityScheme or a $ref to a SecurityScheme.

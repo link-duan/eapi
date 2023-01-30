@@ -20,20 +20,44 @@ const (
 	MimeTypeFormUrlencoded = "application/x-www-form-urlencoded"
 )
 
-type SchemaBuilder struct {
+type delayParsingJob struct {
 	ctx         *Context
 	contentType string
 	stack       Stack[string]
 	params      []*spec.SchemaRef
 	typeParams  []*spec.TypeParam
+	expr        ast.Expr
+}
+
+type delayParsingList struct {
+	list []*delayParsingJob
+}
+
+func newDelayParsingList() *delayParsingList {
+	return &delayParsingList{}
+}
+
+type SchemaBuilder struct {
+	ctx               *Context
+	contentType       string
+	stack             Stack[string]
+	params            []*spec.SchemaRef
+	typeParams        []*spec.TypeParam
+	delayParsingList  *delayParsingList
+	appendToDelayList bool
 }
 
 func NewSchemaBuilder(ctx *Context, contentType string) *SchemaBuilder {
-	return &SchemaBuilder{ctx: ctx, contentType: contentType}
+	return &SchemaBuilder{ctx: ctx, contentType: contentType, delayParsingList: newDelayParsingList(), appendToDelayList: true}
 }
 
 func newSchemaBuilderWithStack(ctx *Context, contentType string, stack Stack[string]) *SchemaBuilder {
-	return &SchemaBuilder{ctx: ctx, contentType: contentType, stack: stack}
+	return &SchemaBuilder{ctx: ctx, contentType: contentType, stack: stack, appendToDelayList: true}
+}
+
+func (s *SchemaBuilder) withDelayParsingList(list *delayParsingList) *SchemaBuilder {
+	s.delayParsingList = list
+	return s
 }
 
 func (s *SchemaBuilder) parseTypeDef(def *TypeDefinition) *spec.SchemaRef {
@@ -41,6 +65,7 @@ func (s *SchemaBuilder) parseTypeDef(def *TypeDefinition) *spec.SchemaRef {
 	if schemaRef == nil {
 		return nil
 	}
+	schemaRef.Value.Key = def.ModelKey()
 
 	if len(def.Enums) > 0 {
 		schema := spec.Unref(s.ctx.Doc(), schemaRef)
@@ -316,6 +341,10 @@ func (s *SchemaBuilder) basicType(name string) *spec.SchemaRef {
 	return nil
 }
 
+func (s *SchemaBuilder) inParsingStack(key string) bool {
+	return lo.Contains(s.stack, key)
+}
+
 func (s *SchemaBuilder) parseType(t types.Type) *spec.SchemaRef {
 	switch t := t.(type) {
 	case *types.Slice:
@@ -329,7 +358,7 @@ func (s *SchemaBuilder) parseType(t types.Type) *spec.SchemaRef {
 	if !ok {
 		return nil
 	}
-	if lo.Contains(s.stack, typeDef.Key()) {
+	if s.inParsingStack(typeDef.Key()) {
 		return spec.RefSchema(typeDef.RefKey())
 	}
 
@@ -341,7 +370,10 @@ func (s *SchemaBuilder) parseType(t types.Type) *spec.SchemaRef {
 	s.stack.Push(typeDef.Key())
 	defer s.stack.Pop()
 
-	payloadSchema := newSchemaBuilderWithStack(s.ctx.WithPackage(typeDef.pkg).WithFile(typeDef.file), s.contentType, append(s.stack, typeDef.Key())).
+	payloadSchema := newSchemaBuilderWithStack(s.ctx.WithPackage(typeDef.pkg).WithFile(typeDef.file), s.contentType, s.stack).
+		setPushToDelayList(s.appendToDelayList).
+		withDelayParsingList(s.delayParsingList).
+		withParams(s.params...).
 		parseTypeDef(typeDef)
 	if payloadSchema == nil {
 		return nil
@@ -386,10 +418,14 @@ func (s *SchemaBuilder) parseCallExpr(expr *ast.CallExpr) *spec.SchemaRef {
 		}
 		ret := def.Decl.Type.Results.List[0]
 		return newSchemaBuilderWithStack(s.ctx.WithPackage(def.pkg).WithFile(def.file), s.contentType, append(s.stack, def.Key())).
+			setPushToDelayList(s.appendToDelayList).
+			withDelayParsingList(s.delayParsingList).
 			ParseExpr(ret.Type)
 
 	case *TypeDefinition:
 		return newSchemaBuilderWithStack(s.ctx.WithPackage(def.pkg).WithFile(def.file), s.contentType, append(s.stack, def.Key())).
+			setPushToDelayList(s.appendToDelayList).
+			withDelayParsingList(s.delayParsingList).
 			parseTypeSpec(def.Spec)
 
 	default:
@@ -398,26 +434,47 @@ func (s *SchemaBuilder) parseCallExpr(expr *ast.CallExpr) *spec.SchemaRef {
 }
 
 func (s *SchemaBuilder) parseIndexExpr(expr *ast.IndexExpr) *spec.SchemaRef {
-	paramType := s.ParseExpr(expr.Index)
-	genericType := s.ParseExpr(expr.X)
+	var paramType *spec.SchemaRef
+	if s.isTypeParam(expr.Index) {
+		t := s.ctx.Package().TypesInfo.TypeOf(expr.Index).(*types.TypeParam)
+		paramType = s.params[t.Index()]
+	} else {
+		paramType = s.ParseExpr(expr.Index)
+	}
+
+	genericType := s.withParams(paramType).ParseExpr(expr.X)
 	if genericType == nil {
 		return nil
 	}
 
 	def := s.ctx.ParseType(s.ctx.Package().TypesInfo.TypeOf(expr.X)).(*TypeDefinition)
-	typeKey := def.ModelKey() + "[" + s.getTypeKey(expr.Index) + "]"
+	typeKey := def.ModelKey() + "[" + paramType.Key() + "]"
+	refKey := "#/components/schemas/" + typeKey
+	if s.inParsingStack(typeKey) {
+		return spec.NewSchemaRef(refKey, nil)
+	}
+
+	// 默认放入延迟解析队列
+	if s.appendToDelayList {
+		// push to delay parsing list
+		s.pushDelayList(expr)
+		return spec.NewSchemaRef(refKey, nil)
+	}
+
+	s.stack.Push(typeKey)
+	defer s.stack.Pop()
 
 	_, exists := s.ctx.Doc().Components.Schemas[typeKey]
 	if !exists {
 		// specialization
-		// 这里要考虑类型参数引用了自身的情况，比如 GType[GType[int]]
+		// 这里要考虑类型参数引用了自身的情况，比如:
+		// type GType[T] struct { Field *GType[T] }
 		schemaRef := s.withParams(paramType).specializeGenericType(genericType)
-		// TODO 暂时不处理泛型类型元信息
-		//schemaRef.Value.WithExtendedType(spec.NewSpecificExtendType(genericType, paramType))
+		schemaRef.Value.WithExtendedType(spec.NewSpecificExtendType(genericType, paramType))
 		s.ctx.Doc().Components.Schemas[typeKey] = schemaRef
 	}
 
-	return spec.NewSchemaRef("#/components/schemas/"+typeKey, nil)
+	return spec.NewSchemaRef(refKey, nil)
 }
 
 func (s *SchemaBuilder) parseIndexListExpr(expr *ast.IndexListExpr) *spec.SchemaRef {
@@ -451,15 +508,18 @@ func (s *SchemaBuilder) getTypeKey(expr ast.Expr) string {
 }
 
 func (s *SchemaBuilder) specializeGenericType(genericType *spec.SchemaRef) *spec.SchemaRef {
-	schemaRef := genericType.Unref(s.ctx.Doc())
-	schema := schemaRef.Value.Clone()
+	schemaRef := genericType.Unref(s.ctx.Doc()).Clone()
+	schema := schemaRef.Value
 	ext := schema.ExtendedTypeInfo
 	if ext == nil || ext.Type != spec.ExtendedTypeGeneric {
 		return genericType
 	}
 
-	for key, property := range schema.Properties {
-		property = property.Unref(s.ctx.Doc()).Clone()
+	for key, item := range schema.Properties {
+		property := item.Unref(s.ctx.Doc())
+		if property == nil {
+			continue
+		}
 		ext := property.Value.ExtendedTypeInfo
 		if ext == nil {
 			continue
@@ -469,7 +529,12 @@ func (s *SchemaBuilder) specializeGenericType(genericType *spec.SchemaRef) *spec
 			schema.Properties[key] = s.params[ext.TypeParam.Index]
 
 		case spec.ExtendedTypeSpecific:
-			schema.Properties[key] = s.withParams(ext.SpecificType.Params...).specializeGenericType(ext.SpecificType.Type)
+			specializedSchema := s.withParams(ext.SpecificType.Params...).specializeGenericType(ext.SpecificType.Type)
+			if item.Ref != "" {
+				property.Value = specializedSchema.Value
+			} else {
+				schema.Properties[key] = specializedSchema
+			}
 
 		default:
 			continue
@@ -477,6 +542,37 @@ func (s *SchemaBuilder) specializeGenericType(genericType *spec.SchemaRef) *spec
 	}
 
 	schema.ExtendedTypeInfo = nil
-	schemaRef.Value = schema
 	return schemaRef
+}
+
+// 判断表达式是否是泛型类型形参
+func (s *SchemaBuilder) isTypeParam(index ast.Expr) bool {
+	t := s.ctx.Package().TypesInfo.TypeOf(index)
+	_, ok := t.(*types.TypeParam)
+	return ok
+}
+
+func (s *SchemaBuilder) handleDelayParsing() {
+	for _, job := range s.delayParsingList.list {
+		newSchemaBuilderWithStack(job.ctx, job.contentType, job.stack).withParams(job.params...).
+			withTypeParams(job.typeParams).
+			setPushToDelayList(false).
+			ParseExpr(job.expr)
+	}
+}
+
+func (s *SchemaBuilder) pushDelayList(expr *ast.IndexExpr) {
+	s.delayParsingList.list = append(s.delayParsingList.list, &delayParsingJob{
+		ctx:         s.ctx,
+		contentType: s.contentType,
+		stack:       s.stack,
+		params:      s.params,
+		typeParams:  s.typeParams,
+		expr:        expr,
+	})
+}
+
+func (s *SchemaBuilder) setPushToDelayList(b bool) *SchemaBuilder {
+	s.appendToDelayList = b
+	return s
 }

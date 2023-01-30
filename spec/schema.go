@@ -169,6 +169,7 @@ type Schema struct {
 
 	// 拓展类型信息. 用于代码生成
 	ExtendedTypeInfo *ExtendedTypeInfo `json:"-" yaml:"-"`
+	Key              string            `json:"-" yaml:"-"`
 }
 
 var _ jsonpointer.JSONPointable = (*Schema)(nil)
@@ -1701,7 +1702,8 @@ func (schema *Schema) WithDescription(s string) *Schema {
 }
 
 func (schema *Schema) Clone() *Schema {
-	return deepcopy.Copy(schema).(*Schema)
+	ret := deepcopy.Copy(*schema).(Schema)
+	return &ret
 }
 
 type SchemaError struct {

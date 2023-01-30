@@ -129,7 +129,10 @@ func (c *Context) ParseStatusCode(status ast.Expr) int {
 }
 
 func (c *Context) GetSchemaByExpr(expr ast.Expr, contentType string) *spec.SchemaRef {
-	return NewSchemaBuilder(c, contentType).ParseExpr(expr)
+	builder := NewSchemaBuilder(c, contentType)
+	res := builder.ParseExpr(expr)
+	builder.handleDelayParsing()
+	return res
 }
 
 func (c *Context) GetHeadingCommentOf(pos token.Pos) *ast.CommentGroup {

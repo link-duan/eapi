@@ -60,13 +60,14 @@ type UpdateGoodsRequest struct {
 
 // GenericTypeResponse used for testing generic type
 type GenericTypeResponse[T any] struct {
-	Data     T              `json:"data"`
-	Metadata map[string]any `json:"metadata"`
-	//Value    SampleGenericType[T] `json:"value"`
+	Data     T                     `json:"data"`
+	Metadata map[string]any        `json:"metadata"`
+	Value    *SampleGenericType[T] `json:"value"`
 }
 
 type SampleGenericType[T any] struct {
-	Value T `json:"value"`
+	Value   T                      `json:"value"`
+	SelfRef GenericTypeResponse[T] `json:"selfRef"`
 }
 
 type List[T any] []T
