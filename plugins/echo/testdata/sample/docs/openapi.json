@@ -129,11 +129,23 @@
                 "title": "ModelList",
                 "type": "array"
             },
-            "sample_model.Map[string]": {
+            "sample_model.Map[integer,string]": {
                 "additionalProperties": {
                     "type": "string"
                 },
                 "title": "ModelMap",
+                "type": "object"
+            },
+            "sample_model.MultipleParamGeneric[integer,string]": {
+                "properties": {
+                    "A": {
+                        "type": "integer"
+                    },
+                    "B": {
+                        "type": "string"
+                    }
+                },
+                "title": "ModelMultipleParamGeneric",
                 "type": "object"
             },
             "sample_model.SampleGenericType[string]": {
@@ -145,7 +157,10 @@
                         "$ref": "#/components/schemas/sample_model.List[string]"
                     },
                     "map": {
-                        "$ref": "#/components/schemas/sample_model.Map[string]"
+                        "$ref": "#/components/schemas/sample_model.Map[integer,string]"
+                    },
+                    "multipleParamGeneric": {
+                        "$ref": "#/components/schemas/sample_model.MultipleParamGeneric[integer,string]"
                     },
                     "selfRef": {
                         "$ref": "#/components/schemas/sample_model.GenericTypeResponse[string]"

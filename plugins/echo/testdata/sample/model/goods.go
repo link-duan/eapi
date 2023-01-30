@@ -66,18 +66,24 @@ type GenericTypeResponse[T any] struct {
 }
 
 type SampleGenericType[T any] struct {
-	Value   T                      `json:"value"`
-	SelfRef GenericTypeResponse[T] `json:"selfRef"`
-	List    List[T]                `json:"list"`
-	Array   Array[T]               `json:"array"`
-	Map     Map[T]                 `json:"map"`
+	Value                T                            `json:"value"`
+	SelfRef              GenericTypeResponse[T]       `json:"selfRef"`
+	List                 List[T]                      `json:"list"`
+	Array                Array[T]                     `json:"array"`
+	Map                  Map[int, T]                  `json:"map"`
+	MultipleParamGeneric MultipleParamGeneric[int, T] `json:"multipleParamGeneric"`
 }
 
 type List[T any] []T
 
 type Array[T any] [4]T
 
-type Map[T any] map[int]T
+type Map[T comparable, V any] map[T]V
+
+type MultipleParamGeneric[T, V any] struct {
+	A T
+	B V
+}
 
 type Error struct {
 	Message string `json:"message"`

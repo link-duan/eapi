@@ -478,18 +478,54 @@ func (s *SchemaBuilder) parseIndexExpr(expr *ast.IndexExpr) *spec.SchemaRef {
 }
 
 func (s *SchemaBuilder) parseIndexListExpr(expr *ast.IndexListExpr) *spec.SchemaRef {
-	// TODO
+	var params []*spec.SchemaRef
+	for _, param := range expr.Indices {
+		var paramType *spec.SchemaRef
+		if s.isTypeParam(param) {
+			t := s.ctx.Package().TypesInfo.TypeOf(param).(*types.TypeParam)
+			paramType = s.params[t.Index()]
+		} else {
+			paramType = s.ParseExpr(param)
+		}
+		params = append(params, paramType)
+	}
+	genericType := s.withParams(params...).ParseExpr(expr.X)
+	if genericType == nil {
+		return nil
+	}
 
-	//var params []*spec.SchemaRef
-	//for _, param := range expr.Indices {
-	//	params = append(params, s.ParseExpr(param))
-	//}
-	//genericType := s.ParseExpr(expr.X)
-	//return spec.NewSchemaRef("", spec.NewObjectSchema().WithExtendedType(
-	//	spec.NewSpecificExtendType(genericType, params...),
-	//))
+	def := s.ctx.ParseType(s.ctx.Package().TypesInfo.TypeOf(expr.X)).(*TypeDefinition)
+	typeKey := def.ModelKey() + "[" + params[0].Key()
+	for _, param := range params[1:] {
+		typeKey += "," + param.Key()
+	}
+	typeKey += "]"
+	refKey := "#/components/schemas/" + typeKey
+	if s.inParsingStack(typeKey) {
+		return spec.NewSchemaRef(refKey, nil)
+	}
 
-	return spec.NewSchema().WithDescription("TODO").NewRef()
+	// 默认放入延迟解析队列
+	if s.appendToDelayList {
+		// push to delay parsing list
+		s.pushDelayList(expr)
+		return spec.NewSchemaRef(refKey, nil)
+	}
+
+	s.stack.Push(typeKey)
+	defer s.stack.Pop()
+
+	_, exists := s.ctx.Doc().Components.Schemas[typeKey]
+	if !exists {
+		// specialization
+		// 这里要考虑类型参数引用了自身的情况，比如:
+		// type GType[T] struct { Field *GType[T] }
+		schemaRef := s.withParams(params...).specializeGenericType(genericType)
+		schemaRef.Value.WithExtendedType(spec.NewSpecificExtendType(genericType, params...))
+		s.ctx.Doc().Components.Schemas[typeKey] = schemaRef
+	}
+
+	return spec.NewSchemaRef(refKey, nil)
 }
 
 func (s *SchemaBuilder) getTypeKey(expr ast.Expr) string {
@@ -576,7 +612,7 @@ func (s *SchemaBuilder) handleDelayParsing() {
 	}
 }
 
-func (s *SchemaBuilder) pushDelayList(expr *ast.IndexExpr) {
+func (s *SchemaBuilder) pushDelayList(expr ast.Expr) {
 	s.delayParsingList.list = append(s.delayParsingList.list, &delayParsingJob{
 		ctx:         s.ctx,
 		contentType: s.contentType,
