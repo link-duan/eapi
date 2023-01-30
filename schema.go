@@ -515,34 +515,49 @@ func (s *SchemaBuilder) specializeGenericType(genericType *spec.SchemaRef) *spec
 		return genericType
 	}
 
-	for key, item := range schema.Properties {
-		property := item.Unref(s.ctx.Doc())
-		if property == nil {
-			continue
-		}
-		ext := property.Value.ExtendedTypeInfo
-		if ext == nil {
-			continue
-		}
-		switch ext.Type {
-		case spec.ExtendedTypeParam:
-			schema.Properties[key] = s.params[ext.TypeParam.Index]
+	// for object
+	for key := range schema.Properties {
+		item := schema.Properties[key]
+		s.specializeSchema(&item)
+		schema.Properties[key] = item
+	}
 
-		case spec.ExtendedTypeSpecific:
-			specializedSchema := s.withParams(ext.SpecificType.Params...).specializeGenericType(ext.SpecificType.Type)
-			if item.Ref != "" {
-				property.Value = specializedSchema.Value
-			} else {
-				schema.Properties[key] = specializedSchema
-			}
+	// for list
+	if schema.Items != nil {
+		s.specializeSchema(&schema.Items)
+	}
 
-		default:
-			continue
-		}
+	// for map
+	if schema.AdditionalProperties != nil {
+		s.specializeSchema(&schema.AdditionalProperties)
 	}
 
 	schema.ExtendedTypeInfo = nil
 	return schemaRef
+}
+
+func (s *SchemaBuilder) specializeSchema(item **spec.SchemaRef) {
+	property := (*item).Unref(s.ctx.Doc())
+	if property == nil {
+		return
+	}
+	ext := property.Value.ExtendedTypeInfo
+	if ext == nil {
+		return
+	}
+	switch ext.Type {
+	case spec.ExtendedTypeParam:
+		*item = s.params[ext.TypeParam.Index]
+
+	case spec.ExtendedTypeSpecific:
+		specializedSchema := s.withParams(ext.SpecificType.Params...).specializeGenericType(ext.SpecificType.Type)
+		if (*item).Ref != "" {
+			property.Value = specializedSchema.Value
+		} else {
+			*item = s.params[ext.TypeParam.Index]
+		}
+	}
+	return
 }
 
 // 判断表达式是否是泛型类型形参

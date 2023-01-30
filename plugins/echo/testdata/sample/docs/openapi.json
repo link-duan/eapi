@@ -1,6 +1,13 @@
 {
     "components": {
         "schemas": {
+            "sample_model.Array[string]": {
+                "items": {
+                    "type": "string"
+                },
+                "title": "ModelArray",
+                "type": "array"
+            },
             "sample_model.CreateGoodsRequest": {
                 "properties": {
                     "cover": {
@@ -115,8 +122,31 @@
                 "title": "ModelListGoodsResponse",
                 "type": "object"
             },
+            "sample_model.List[string]": {
+                "items": {
+                    "type": "string"
+                },
+                "title": "ModelList",
+                "type": "array"
+            },
+            "sample_model.Map[string]": {
+                "additionalProperties": {
+                    "type": "string"
+                },
+                "title": "ModelMap",
+                "type": "object"
+            },
             "sample_model.SampleGenericType[string]": {
                 "properties": {
+                    "array": {
+                        "$ref": "#/components/schemas/sample_model.Array[string]"
+                    },
+                    "list": {
+                        "$ref": "#/components/schemas/sample_model.List[string]"
+                    },
+                    "map": {
+                        "$ref": "#/components/schemas/sample_model.Map[string]"
+                    },
                     "selfRef": {
                         "$ref": "#/components/schemas/sample_model.GenericTypeResponse[string]"
                     },
